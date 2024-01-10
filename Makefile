@@ -1,6 +1,7 @@
 ##
 # Void editor
 #
+# compile command: time make && ./voided && echo $?
 # @file
 # @version 0.1
 
