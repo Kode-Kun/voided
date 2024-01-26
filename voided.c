@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <errno.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -6,31 +7,43 @@
 
 struct termios orig_term;
 
+void die(const char *s){
+  perror(s);
+  exit(1);
+}
+
 void disable_raw_mode(){
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_term);
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_term) == -1)
+  die("tcsetattr");
+
 }
 
 void enable_raw_mode(){
-    tcgetattr(STDIN_FILENO, &orig_term);
-    atexit(disable_raw_mode);
+  if(tcgetattr(STDIN_FILENO, &orig_term) == -1) die("tcgetattr");
+  atexit(disable_raw_mode);
 
-    struct termios raw = orig_term;
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    raw.c_oflag &= ~(OPOST);
-    raw.c_cflag |= (CS8);
-    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+  struct termios raw = orig_term;
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  raw.c_oflag &= ~(OPOST);
+  raw.c_cflag |= (CS8);
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+  raw.c_cc[VMIN] = 0;
+  raw.c_cc[VTIME] = 1;
+
+  if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
 int main(){
-    enable_raw_mode();
-    char c;
-    while(read(STDIN_FILENO, &c, 1) == 1 && c != 'q'){
-        if(iscntrl(c)){
-            printf("%d\r\n", c);
-        } else{
-            printf("%d ('%c')\r\n", c, c);
-        }
+  enable_raw_mode();
+  while(1){
+    char c = '\0';
+    if(read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) die("read");
+    if(iscntrl(c)){
+      printf("%d\r\n", c);
+    } else{
+      printf("%d ('%c')\r\n", c, c);
     }
-    return 0;
+    if(c == 'q') break;
+  }
+  return 0;
 }
