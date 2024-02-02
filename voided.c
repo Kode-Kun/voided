@@ -115,13 +115,19 @@ struct abuf{
 
 void ab_append(struct abuf *ab, const char *s, int len){
   char *new = realloc(ab->b, ab->len + len);
+<<<<<<< HEAD
 
+=======
+>>>>>>> 09f4513cefafc3f1eec92ee3931ed3322331de8b
   if(new == NULL) return;
   memcpy(&new[ab->len], s, len);
   ab->b = new;
   ab->len += len;
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> 09f4513cefafc3f1eec92ee3931ed3322331de8b
 void ab_free(struct abuf *ab){
   free(ab->b);
 }
@@ -130,6 +136,7 @@ void ab_free(struct abuf *ab){
 
 void voided_draw_rows(struct abuf *ab){
   int y;
+<<<<<<< HEAD
   for(y = 0; y < E.screenrows; y++){
     if(y == E.screenrows / 3){
       char welcome[80];
@@ -137,6 +144,15 @@ void voided_draw_rows(struct abuf *ab){
         "Void editor -- version %s", VOID_VERSION);
       if(welcomelen > E.screencols) welcomelen = E.screencols;
       int padding = (E.screencols - welcomelen) / 2;
+=======
+  for(y = 0; y < E.scrows; y++){
+    if(y == E.scrows / 3){
+      char welcome[80];
+      int welcomelen = snprintf(welcome, sizeof(welcome),
+        "Void editor -- version %s", VOID_VERSION);
+      if(welcomelen > E.sccols) welcomelen = E.sccols;
+      int padding = (E.sccols - welcomelen) / 2;
+>>>>>>> 09f4513cefafc3f1eec92ee3931ed3322331de8b
       if(padding){
         ab_append(ab, "~", 1);
         padding--;
@@ -148,12 +164,19 @@ void voided_draw_rows(struct abuf *ab){
     }
 
     ab_append(ab, "\x1b[K", 3);
+<<<<<<< HEAD
     if(y < E.screenrows - 1){
+=======
+    if(y < E.scrows - 1){
+>>>>>>> 09f4513cefafc3f1eec92ee3931ed3322331de8b
       ab_append(ab, "\r\n", 2);
     }
   }
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> 09f4513cefafc3f1eec92ee3931ed3322331de8b
 void voided_refresh_screen(){
   struct abuf ab = ABUF_INIT;
 
