@@ -15,9 +15,17 @@
 
 /*** data ***/
 
+enum Mode{
+  NORMAL,
+  VISUAL,
+  INSERT,
+  COMMAND
+};
+
 struct ed_config{
   int scrows;
   int sccols;
+  enum Mode mode;
   struct termios orig_term;
 };
 
@@ -121,12 +129,16 @@ void voided_refresh_screen(){
 void voided_process_keypress(){
   char c = voided_read_key();
 
-  switch(c){
-    case CTRL_KEY('q'):
-      write(STDOUT_FILENO, "\x1b[2J", 4);
-      write(STDOUT_FILENO, "\x1b[H", 3);
-      exit(0);
+  switch(E.mode){
+    case NORMAL:
+      switch(c){
+      case CTRL_KEY('q'):
+        write(STDOUT_FILENO, "\x1b[2J", 4);
+        write(STDOUT_FILENO, "\x1b[H", 3);
+        exit(0);
+        break;
       break;
+    }
   }
 }
 
