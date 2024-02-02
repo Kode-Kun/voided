@@ -19,14 +19,11 @@
 
 enum Mode{
   NORMAL,
-  VISUAL,
-  INSERT,
-  COMMAND
 };
 
 struct ed_config{
-  int scrows;
-  int sccols;
+  int cx, cy;
+  int scrows, sccols;
   enum Mode mode;
   struct termios orig_term;
 };
@@ -159,7 +156,10 @@ void voided_refresh_screen(){
 
   voided_draw_rows(&ab);
 
-  ab_append(&ab, "\x1b[H", 3);
+  char buf[32];
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy+ 1, E.cx + 1);
+  ab_append(&ab, buf, strlen(buf));
+
   ab_append(&ab, "\x1b[?25h", 6);
   write(STDOUT_FILENO, ab.b, ab.len);
 
@@ -168,21 +168,53 @@ void voided_refresh_screen(){
 
 /*** input ***/
 
+void voided_move_cursor(char key){
+  switch(E.mode){
+    case NORMAL:
+      switch(key){
+        case 'h':
+          E.cx--;
+          break;
+        case 'j':
+          E.cy++;
+          break;
+        case 'k':
+          E.cy--;
+          break;
+        case 'l':
+          E.cx++;
+          break;
+      }
+      break;
+  }
+}
+
 void voided_process_keypress(){
   char c = voided_read_key();
 
-  switch(c){
-    case CTRL_KEY('q'):
-      write(STDOUT_FILENO, "\x1b[2J", 4);
-      write(STDOUT_FILENO, "\x1b[H", 3);
-      exit(0);
-      break;
+  switch(E.mode){
+    case NORMAL:
+      switch(c){
+        case CTRL_KEY('q'):
+          write(STDOUT_FILENO, "\x1b[2J", 4);
+          write(STDOUT_FILENO, "\x1b[H", 3);
+          exit(0);
+          break;
+        case 'h':
+        case 'j':
+        case 'k':
+        case 'l':
+          voided_move_cursor(c);
+          break;
+      }
   }
 }
 
 /*** init ***/
 
 void voided_init(){
+  E.cx = 0;
+  E.cy = 0;
   E.mode = NORMAL;
   if(get_window_size(&E.scrows, &E.sccols) == -1) die("get_window_size");
 }
