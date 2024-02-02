@@ -114,44 +114,44 @@ struct abuf{
 
 #define ABUF_INIT {NULL, 0}
 
-void ab_append(struct abuf *ab, const char *s, int len) {
+void ab_append(struct abuf *ab, const char *s, int len){
   char *new = realloc(ab->b, ab->len + len);
-  if (new == NULL) return;
+  if(new == NULL) return;
   memcpy(&new[ab->len], s, len);
   ab->b = new;
   ab->len += len;
 }
-void ab_free(struct abuf *ab) {
+void ab_free(struct abuf *ab){
   free(ab->b);
 }
 
 /*** output ***/
 
-void voided_draw_rows(struct abuf *ab) {
+void voided_draw_rows(struct abuf *ab){
   int y;
-  for (y = 0; y < E.scrows; y++) {
-    if (y == E.scrows / 3) {
+  for(y = 0; y < E.scrows; y++){
+    if(y == E.scrows / 3){
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome),
         "Void editor -- version %s", VOID_VERSION);
-      if (welcomelen > E.sccols) welcomelen = E.sccols;
+      if(welcomelen > E.sccols) welcomelen = E.sccols;
       int padding = (E.sccols - welcomelen) / 2;
-      if (padding) {
+      if(padding){
         ab_append(ab, "~", 1);
         padding--;
       }
-      while (padding--) ab_append(ab, " ", 1);
+      while(padding--) ab_append(ab, " ", 1);
       ab_append(ab, welcome, welcomelen);
     } else {
       ab_append(ab, "~", 1);
     }
     ab_append(ab, "\x1b[K", 3);
-    if (y < E.scrows - 1) {
+    if(y < E.scrows - 1){
       ab_append(ab, "\r\n", 2);
     }
   }
 }
-void voided_refresh_screen() {
+void voided_refresh_screen(){
   struct abuf ab = ABUF_INIT;
 
   ab_append(&ab, "\x1b[?25l", 6);
