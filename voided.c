@@ -1,14 +1,13 @@
 /*** includes ***/
 
-#include <asm-generic/ioctls.h>
-#include <unistd.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
 #include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
 
 /*** defines ***/
 
@@ -26,8 +25,8 @@ enum Mode{
 };
 
 struct ed_config{
-  int scrows;
-  int sccols;
+  int screenrows;
+  int screencols;
   enum Mode mode;
   struct termios orig_term;
 };
@@ -46,7 +45,7 @@ void die(const char *s){
 
 void disable_raw_mode(){
   if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_term) == -1)
-  die("tcsetattr");
+    die("tcsetattr");
 }
 
 void enable_raw_mode(){
@@ -80,8 +79,8 @@ int get_cursor_position(int *rows, int *cols){
   if(write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
 
   while(i < sizeof(buf) - 1){
-    if(read(STDIN_FILENO, &buf[i], 1) != 1) break;
-    if(buf[i] == 'R') break;
+    if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+    if (buf[i] == 'R') break;
     i++;
   }
   buf[i] = '\0';
@@ -95,10 +94,10 @@ int get_cursor_position(int *rows, int *cols){
 int get_window_size(int *rows, int *cols){
   struct winsize ws;
 
-  if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0){
+  if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
     if(write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
     return get_cursor_position(rows, cols);
-  }else{
+  } else {
     *cols = ws.ws_col;
     *rows = ws.ws_row;
     return 0;
@@ -114,56 +113,59 @@ struct abuf{
 
 #define ABUF_INIT {NULL, 0}
 
-void ab_append(struct abuf *ab, const char *s, int len) {
+void ab_append(struct abuf *ab, const char *s, int len){
   char *new = realloc(ab->b, ab->len + len);
-  if (new == NULL) return;
+
+  if(new == NULL) return;
   memcpy(&new[ab->len], s, len);
   ab->b = new;
   ab->len += len;
 }
-void ab_free(struct abuf *ab) {
+
+void ab_free(struct abuf *ab){
   free(ab->b);
 }
 
 /*** output ***/
 
-void voided_draw_rows(struct abuf *ab) {
+void voided_draw_rows(struct abuf *ab){
   int y;
-  for (y = 0; y < E.scrows; y++) {
-    if (y == E.scrows / 3) {
+  for(y = 0; y < E.screenrows; y++){
+    if(y == E.screenrows / 3){
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome),
         "Void editor -- version %s", VOID_VERSION);
-      if (welcomelen > E.sccols) welcomelen = E.sccols;
-      int padding = (E.sccols - welcomelen) / 2;
-      if (padding) {
+      if(welcomelen > E.screencols) welcomelen = E.screencols;
+      int padding = (E.screencols - welcomelen) / 2;
+      if(padding){
         ab_append(ab, "~", 1);
         padding--;
       }
-      while (padding--) ab_append(ab, " ", 1);
+      while(padding--) ab_append(ab, " ", 1);
       ab_append(ab, welcome, welcomelen);
     } else {
       ab_append(ab, "~", 1);
     }
+
     ab_append(ab, "\x1b[K", 3);
-    if (y < E.scrows - 1) {
+    if(y < E.screenrows - 1){
       ab_append(ab, "\r\n", 2);
     }
   }
 }
-void voided_refresh_screen() {
+
+void voided_refresh_screen(){
   struct abuf ab = ABUF_INIT;
 
   ab_append(&ab, "\x1b[?25l", 6);
-  ab_append(&ab, "\x1b[2J", 4);
   ab_append(&ab, "\x1b[H", 3);
 
   voided_draw_rows(&ab);
 
   ab_append(&ab, "\x1b[H", 3);
   ab_append(&ab, "\x1b[?25h", 6);
-  write(STDOUT_FILENO, ab.b, ab.len);
 
+  write(STDOUT_FILENO, ab.b, ab.len);
   ab_free(&ab);
 }
 
@@ -185,7 +187,7 @@ void voided_process_keypress(){
 
 void voided_init(){
   E.mode = NORMAL;
-  if(get_window_size(&E.sccols, &E.scrows) == -1) die("get_window_size");
+  if(get_window_size(&E.screenrows, &E.screencols) == -1) die("get_window_size");
 }
 
 int main(){
@@ -196,5 +198,6 @@ int main(){
     voided_refresh_screen();
     voided_process_keypress();
   }
+
   return 0;
 }
