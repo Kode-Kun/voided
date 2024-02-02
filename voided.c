@@ -6,10 +6,13 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 
 /*** defines ***/
+
+#define VOID_VERSION "0.0.1"
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -102,26 +105,66 @@ int get_window_size(int *rows, int *cols){
   }
 }
 
+/*** append buffer ***/
+
+struct abuf{
+  char *b;
+  int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+void ab_append(struct abuf *ab, const char *s, int len) {
+  char *new = realloc(ab->b, ab->len + len);
+  if (new == NULL) return;
+  memcpy(&new[ab->len], s, len);
+  ab->b = new;
+  ab->len += len;
+}
+void ab_free(struct abuf *ab) {
+  free(ab->b);
+}
+
 /*** output ***/
 
-void voided_draw_rows(){
+void voided_draw_rows(struct abuf *ab) {
   int y;
-  for(y = 0; y < E.scrows; y++){
-    write(STDOUT_FILENO, "~", 1);
-
-    if(y < E.scrows -1){
-      write(STDOUT_FILENO, "\r\n", 2);
+  for (y = 0; y < E.scrows; y++) {
+    if (y == E.scrows / 3) {
+      char welcome[80];
+      int welcomelen = snprintf(welcome, sizeof(welcome),
+        "Void editor -- version %s", VOID_VERSION);
+      if (welcomelen > E.sccols) welcomelen = E.sccols;
+      int padding = (E.sccols - welcomelen) / 2;
+      if (padding) {
+        ab_append(ab, "~", 1);
+        padding--;
+      }
+      while (padding--) ab_append(ab, " ", 1);
+      ab_append(ab, welcome, welcomelen);
+    } else {
+      ab_append(ab, "~", 1);
+    }
+    ab_append(ab, "\x1b[K", 3);
+    if (y < E.scrows - 1) {
+      ab_append(ab, "\r\n", 2);
     }
   }
 }
+void voided_refresh_screen() {
+  struct abuf ab = ABUF_INIT;
 
-void voided_refresh_screen(){
-  write(STDOUT_FILENO, "\x1b[2J", 4);
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  ab_append(&ab, "\x1b[?25l", 6);
+  ab_append(&ab, "\x1b[2J", 4);
+  ab_append(&ab, "\x1b[H", 3);
 
-  voided_draw_rows();
+  voided_draw_rows(&ab);
 
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  ab_append(&ab, "\x1b[H", 3);
+  ab_append(&ab, "\x1b[?25h", 6);
+  write(STDOUT_FILENO, ab.b, ab.len);
+
+  ab_free(&ab);
 }
 
 /*** input ***/
@@ -129,22 +172,19 @@ void voided_refresh_screen(){
 void voided_process_keypress(){
   char c = voided_read_key();
 
-  switch(E.mode){
-    case NORMAL:
-      switch(c){
-      case CTRL_KEY('q'):
-        write(STDOUT_FILENO, "\x1b[2J", 4);
-        write(STDOUT_FILENO, "\x1b[H", 3);
-        exit(0);
-        break;
+  switch(c){
+    case CTRL_KEY('q'):
+      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[H", 3);
+      exit(0);
       break;
-    }
   }
 }
 
 /*** init ***/
 
 void voided_init(){
+  E.mode = NORMAL;
   if(get_window_size(&E.sccols, &E.scrows) == -1) die("get_window_size");
 }
 
