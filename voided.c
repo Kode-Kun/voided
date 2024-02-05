@@ -173,16 +173,24 @@ void voided_move_cursor(char key){
     case NORMAL:
       switch(key){
         case 'h':
-          E.cx--;
+          if(E.cx != 0){
+            E.cx--;
+          }
           break;
         case 'j':
-          E.cy++;
+          if(E.cy != E.scrows - 1){
+            E.cy++;
+          }
           break;
         case 'k':
-          E.cy--;
+          if(E.cy != 0){
+            E.cy--;
+          }
           break;
         case 'l':
-          E.cx++;
+          if(E.cx != E.sccols - 1){
+            E.cx++;
+          }
           break;
       }
       break;
