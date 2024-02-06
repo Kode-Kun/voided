@@ -1,3 +1,8 @@
+
+// TODO: steps 46 to 54 (except 49). I'm holding back on those steps for
+// now because I'm using a completely different set of keybindings than
+// the original tutorial.
+
 /*** includes ***/
 
 #include <ctype.h>
@@ -117,6 +122,7 @@ void ab_append(struct abuf *ab, const char *s, int len){
   ab->b = new;
   ab->len += len;
 }
+
 void ab_free(struct abuf *ab){
   free(ab->b);
 }
@@ -147,6 +153,7 @@ void voided_draw_rows(struct abuf *ab){
     }
   }
 }
+
 void voided_refresh_screen(){
   struct abuf ab = ABUF_INIT;
 
