@@ -1,9 +1,12 @@
-
 // TODO: steps 46 to 54 (except 49). I'm holding back on those steps for
 // now because I'm using a completely different set of keybindings than
 // the original tutorial.
 
 /*** includes ***/
+
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
 
 #include <ctype.h>
 #include <errno.h>
@@ -11,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -26,9 +30,16 @@ enum Mode{
   NORMAL,
 };
 
+typedef struct erow{
+  int size;
+  char *chars;
+} erow;
+
 struct ed_config{
   int cx, cy;
   int scrows, sccols;
+  int numrows;
+  erow *row;
   enum Mode mode;
   struct termios orig_term;
 };
@@ -105,6 +116,38 @@ int get_window_size(int *rows, int *cols){
     return 0;
   }
 }
+/*** row operations ***/
+
+void voided_append_row(char *s, size_t len){
+  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+
+  int at = E.numrows;
+  E.row[at].size = len;
+  E.row[at].chars = malloc(len + 1);
+  memcpy(E.row[at].chars, s, len);
+  E.row[at].chars[len] = '\0';
+  E.numrows++;
+}
+
+/*** file i/o ***/
+
+void voided_open(char *filename){
+  FILE *fp = fopen(filename, "r");
+  if(!fp) die("fopen");
+
+  char *line = NULL;
+  size_t linecap = 0;
+  ssize_t linelen;
+  linelen = getline(&line, &linecap, fp);
+  while((linelen = getline(&line, &linecap, fp)) != -1){
+    while(linelen > 0 && (line[linelen - 1] == '\n' ||
+                          line[linelen - 1] == '\r'))
+      linelen--;
+    voided_append_row(line, linelen);
+  }
+  free(line);
+  fclose(fp);
+}
 
 /*** append buffer ***/
 
@@ -132,20 +175,26 @@ void ab_free(struct abuf *ab){
 void voided_draw_rows(struct abuf *ab){
   int y;
   for(y = 0; y < E.scrows; y++){
-    if(y == E.scrows / 3){
-      char welcome[80];
-      int welcomelen = snprintf(welcome, sizeof(welcome),
-        "Void editor -- version %s", VOID_VERSION);
-      if(welcomelen > E.sccols) welcomelen = E.sccols;
-      int padding = (E.sccols - welcomelen) / 2;
-      if(padding){
+    if(y >= E.numrows){
+      if(E.numrows == 0 && y == E.scrows / 3){
+        char welcome[80];
+        int welcomelen = snprintf(welcome, sizeof(welcome),
+                                  "Void editor -- version %s", VOID_VERSION);
+        if(welcomelen > E.sccols) welcomelen = E.sccols;
+        int padding = (E.sccols - welcomelen) / 2;
+        if(padding){
+          ab_append(ab, "~", 1);
+          padding--;
+        }
+        while(padding--) ab_append(ab, " ", 1);
+        ab_append(ab, welcome, welcomelen);
+      } else {
         ab_append(ab, "~", 1);
-        padding--;
       }
-      while(padding--) ab_append(ab, " ", 1);
-      ab_append(ab, welcome, welcomelen);
     } else {
-      ab_append(ab, "~", 1);
+      int len = E.row[y].size;
+      if(len > E.sccols) len = E.sccols;
+      ab_append(ab, E.row[y].chars, len);
     }
     ab_append(ab, "\x1b[K", 3);
     if(y < E.scrows - 1){
@@ -230,13 +279,19 @@ void voided_process_keypress(){
 void voided_init(){
   E.cx = 0;
   E.cy = 0;
+  E.numrows = 0;
+  E.row = NULL;
   E.mode = NORMAL;
   if(get_window_size(&E.scrows, &E.sccols) == -1) die("get_window_size");
 }
 
-int main(){
+int main(int argc, char **argv){
   enable_raw_mode();
   voided_init();
+
+  if(argc >= 2){
+    voided_open(argv[1]);
+  }
 
   while(1){
     voided_refresh_screen();
