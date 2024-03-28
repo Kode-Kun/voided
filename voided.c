@@ -36,10 +36,11 @@ typedef struct erow{
 } erow;
 
 struct ed_config{
-  int cx, cy;
-  int scrows, sccols;
-  int numrows;
-  erow *row;
+  int cx, cy;              // cursor x and y
+  int rowoff, coloff;      // row offset and column offset
+  int scrows, sccols;      // screen rows and screen columns (receives value from get_window_size())
+  int numrows;             // total number of rows
+  erow *row;               // holds all rows in the currently opened file
   enum Mode mode;
   struct termios orig_term;
 };
@@ -171,14 +172,30 @@ void ab_free(struct abuf *ab){
 
 /*** output ***/
 
+void voided_scroll(){
+  if(E.cy < E.rowoff){
+    E.rowoff = E.cy;
+  }
+  if(E.cy >= E.rowoff + E.scrows){
+    E.rowoff++;
+  }
+  if(E.cx < E.coloff){
+    E.coloff = E.cx;
+  }
+  if(E.cx >= E.coloff + E.sccols){
+    E.coloff = E.cx - E.sccols + 1;
+  }
+}
+
 void voided_draw_rows(struct abuf *ab){
   int y;
   for(y = 0; y < E.scrows; y++){
-    if(y >= E.numrows){
+    int filerow = y + E.rowoff;
+    if(filerow >= E.numrows){
       if(E.numrows == 0 && y == E.scrows / 3){
         char welcome[80];
         int welcomelen = snprintf(welcome, sizeof(welcome),
-                                  "Void editor -- version %s", VOID_VERSION);
+                         "Void editor -- version %s", VOID_VERSION);
         if(welcomelen > E.sccols) welcomelen = E.sccols;
         int padding = (E.sccols - welcomelen) / 2;
         if(padding){
@@ -191,9 +208,10 @@ void voided_draw_rows(struct abuf *ab){
         ab_append(ab, "~", 1);
       }
     } else {
-      int len = E.row[y].size;
+      int len = E.row[filerow].size - E.coloff;
+      if(len < 0) len = 0;
       if(len > E.sccols) len = E.sccols;
-      ab_append(ab, E.row[y].chars, len);
+      ab_append(ab, &E.row[filerow].chars[E.coloff], len);
     }
     ab_append(ab, "\x1b[K", 3);
     if(y < E.scrows - 1){
@@ -203,6 +221,8 @@ void voided_draw_rows(struct abuf *ab){
 }
 
 void voided_refresh_screen(){
+  voided_scroll();
+
   struct abuf ab = ABUF_INIT;
 
   ab_append(&ab, "\x1b[?25l", 6);
@@ -212,7 +232,8 @@ void voided_refresh_screen(){
   voided_draw_rows(&ab);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy+ 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+                                            (E.cx - E.coloff) + 1);
   ab_append(&ab, buf, strlen(buf));
 
   ab_append(&ab, "\x1b[?25h", 6);
@@ -224,16 +245,21 @@ void voided_refresh_screen(){
 /*** input ***/
 
 void voided_move_cursor(char key){
+  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
   switch(E.mode){
     case NORMAL:
       switch(key){
         case 'h':
           if(E.cx != 0){
             E.cx--;
+          } else if(E.cy > 0){
+            E.cy--;
+            E.cx = E.row[E.cy].size;
           }
           break;
         case 'j':
-          if(E.cy != E.scrows - 1){
+          if(E.cy < E.numrows){
             E.cy++;
           }
           break;
@@ -243,12 +269,21 @@ void voided_move_cursor(char key){
           }
           break;
         case 'l':
-          if(E.cx != E.sccols - 1){
+          if(row && E.cx < row->size){
             E.cx++;
+          } else if(row && E.cx == row->size){
+            E.cy++;
+            E.cx = 0;
           }
           break;
       }
       break;
+  }
+
+  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  int rowlen = row ? row->size : 0;
+  if(E.cx > rowlen){
+    E.cx = rowlen;
   }
 }
 
@@ -278,9 +313,12 @@ void voided_process_keypress(){
 void voided_init(){
   E.cx = 0;
   E.cy = 0;
+  E.rowoff = 0;
+  E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
   E.mode = NORMAL;
+
   if(get_window_size(&E.scrows, &E.sccols) == -1) die("get_window_size");
 }
 
