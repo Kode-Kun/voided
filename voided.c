@@ -11,11 +11,13 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /*** defines ***/
@@ -23,6 +25,7 @@
 #define VOID_VERSION "0.0.1"
 #define VOID_TAB_STOP 8
 
+// keyboard-related macros
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 #define MV_RIGHT 'l'
@@ -39,22 +42,25 @@ enum Mode{
 typedef struct erow{
   int size;
   int rsize;
-  char *chars;
-  char *render;
+  char *chars;             // string with row's contents
+  char *render;            // string that gets rendered
 } erow;
 
 struct ed_config{
   int cx, cy;              // cursor x and y
-  int rx;
+  int rx;                  // cursor x position in render string
   int rowoff, coloff;      // row offset and column offset
   int scrows, sccols;      // screen rows and screen columns (receives value from get_window_size())
   int numrows;             // total number of rows
   erow *row;               // holds all rows in the currently opened file
+  char *filename;
+  char statusmsg[80];
+  time_t statusmsg_time;   // time elapsed since status msg was first drawn
   enum Mode mode;
   struct termios orig_term;
 };
 
-struct ed_config E;
+struct ed_config E;        // global editor config
 
 /*** terminal ***/
 
@@ -128,6 +134,17 @@ int get_window_size(int *rows, int *cols){
 }
 /*** row operations ***/
 
+int row_cx_to_rx(erow *row, int cx){
+  int rx = 0;
+  int j;
+  for(j = 0; j < cx; j++){
+    if(row->chars[j] == '\t')
+      rx += (VOID_TAB_STOP - 1) - (rx % VOID_TAB_STOP);
+    rx++;
+  }
+  return rx;
+}
+
 void voided_update_row(erow *row){
   int tabs = 0;
   int j;
@@ -169,6 +186,9 @@ void voided_append_row(char *s, size_t len){
 /*** file i/o ***/
 
 void voided_open(char *filename){
+  free(E.filename);
+  E.filename = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if(!fp) die("fopen");
 
@@ -209,7 +229,10 @@ void ab_free(struct abuf *ab){
 /*** output ***/
 
 void voided_scroll(){
-  E.rx = E.cx;
+  E.rx = 0;
+  if(E.cy < E.numrows){
+    E.rx = row_cx_to_rx(&E.row[E.cy], E.cx);
+  }
 
   if(E.cy < E.rowoff){
     E.rowoff = E.cy;
@@ -252,10 +275,37 @@ void voided_draw_rows(struct abuf *ab){
       ab_append(ab, &E.row[filerow].render[E.coloff], len);
     }
     ab_append(ab, "\x1b[K", 3);
-    if(y < E.scrows - 1){
-      ab_append(ab, "\r\n", 2);
+    ab_append(ab, "\r\n", 2);
+  }
+}
+
+void voided_draw_status_bar(struct abuf *ab){
+  ab_append(ab, "\x1b[7m", 4);
+  char status[80], rstatus[80];
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+                     E.filename ? E.filename : "[No Name]", E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  if(len > E.sccols) len = E.sccols;
+  ab_append(ab, status, len);
+  while(len < E.sccols){
+    if(E.sccols - len == rlen){
+      ab_append(ab, rstatus, rlen);
+      break;
+    } else{
+      ab_append(ab, " ", 1);
+      len++;
     }
   }
+  ab_append(ab, "\x1b[m", 3);
+  ab_append(ab, "\r\n", 2);
+}
+
+void voided_draw_msg_bar(struct abuf *ab){
+  ab_append(ab, "\x1b[K", 3);
+  int msglen = strlen(E.statusmsg);
+  if(msglen > E.sccols) msglen = E.sccols;
+  if(msglen && time(NULL) - E.statusmsg_time < 5)
+    ab_append(ab, E.statusmsg, msglen);
 }
 
 void voided_refresh_screen(){
@@ -268,16 +318,26 @@ void voided_refresh_screen(){
   ab_append(&ab, "\x1b[H", 3);
 
   voided_draw_rows(&ab);
+  voided_draw_status_bar(&ab);
+  voided_draw_msg_bar(&ab);
 
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
-                                            (E.cx - E.coloff) + 1);
+                                            (E.rx - E.coloff) + 1);
   ab_append(&ab, buf, strlen(buf));
 
   ab_append(&ab, "\x1b[?25h", 6);
   write(STDOUT_FILENO, ab.b, ab.len);
 
   ab_free(&ab);
+}
+
+void voided_set_status_msg(const char *fmt, ...){
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -336,10 +396,31 @@ void voided_process_keypress(){
           write(STDOUT_FILENO, "\x1b[H", 3);
           exit(0);
           break;
-        case 'h':
-        case 'j':
-        case 'k':
-        case 'l':
+        // TODO: fix bug where CTRL_KEY(MV_DOWN) causes the cursor to get stuck on the status bar
+        // and only gets unstuck after a CTRL_KEY(MV_UP)
+        case CTRL_KEY(MV_UP):
+        case CTRL_KEY(MV_DOWN):
+          {
+            if(c == CTRL_KEY(MV_UP)){
+              E.cy = E.rowoff;
+            } else if(c == CTRL_KEY(MV_DOWN)){
+              E.cy += E.scrows - 1;
+              if(E.cy > E.numrows) E.cy = E.numrows;
+            }
+            int times = E.scrows;
+            while(times--){
+              voided_move_cursor(c == CTRL_KEY(MV_UP) ? MV_UP : MV_DOWN);
+            }
+          }
+          break;
+        case '$':
+          if(E.cy < E.numrows)
+            E.cx = E.row[E.cy].size;
+          break;
+        case MV_DOWN:
+        case MV_UP:
+        case MV_RIGHT:
+        case MV_LEFT:
           voided_move_cursor(c);
           break;
       }
@@ -356,9 +437,13 @@ void voided_init(){
   E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.filename = NULL;
+  E.statusmsg[0] = '\0';
+  E.statusmsg_time = 0;
   E.mode = NORMAL;
 
   if(get_window_size(&E.scrows, &E.sccols) == -1) die("get_window_size");
+  E.scrows -= 2;
 }
 
 int main(int argc, char **argv){
@@ -368,6 +453,8 @@ int main(int argc, char **argv){
   if(argc >= 2){
     voided_open(argv[1]);
   }
+
+  voided_set_status_msg("HELP: Ctrl-Q = quit");
 
   while(1){
     voided_refresh_screen();
