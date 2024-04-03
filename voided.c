@@ -282,8 +282,17 @@ void voided_draw_rows(struct abuf *ab){
 void voided_draw_status_bar(struct abuf *ab){
   ab_append(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
+  char *filename = strdup(E.filename);
+  int fn_size = strlen(E.filename);
+  if (fn_size > 20){
+    int j = 3;
+    int i;
+    for(i = 0; i < j; i++){
+      filename[(20 - (j-i))] = '.';
+    }
+  }
   int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-                     E.filename ? E.filename : "[No Name]", E.numrows);
+                     filename ? filename : "[No Name]", E.numrows);
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
   if(len > E.sccols) len = E.sccols;
   ab_append(ab, status, len);
@@ -298,6 +307,7 @@ void voided_draw_status_bar(struct abuf *ab){
   }
   ab_append(ab, "\x1b[m", 3);
   ab_append(ab, "\r\n", 2);
+  free(filename);
 }
 
 void voided_draw_msg_bar(struct abuf *ab){
