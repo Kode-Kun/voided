@@ -21,8 +21,14 @@
 /*** defines ***/
 
 #define VOID_VERSION "0.0.1"
+#define VOID_TAB_STOP 8
 
 #define CTRL_KEY(k) ((k) & 0x1f)
+
+#define MV_RIGHT 'l'
+#define MV_LEFT 'h'
+#define MV_DOWN 'j'
+#define MV_UP 'k'
 
 /*** data ***/
 
@@ -32,11 +38,14 @@ enum Mode{
 
 typedef struct erow{
   int size;
+  int rsize;
   char *chars;
+  char *render;
 } erow;
 
 struct ed_config{
   int cx, cy;              // cursor x and y
+  int rx;
   int rowoff, coloff;      // row offset and column offset
   int scrows, sccols;      // screen rows and screen columns (receives value from get_window_size())
   int numrows;             // total number of rows
@@ -119,6 +128,28 @@ int get_window_size(int *rows, int *cols){
 }
 /*** row operations ***/
 
+void voided_update_row(erow *row){
+  int tabs = 0;
+  int j;
+  for(j=0; j< row->size; j++){
+    if(row->chars[j] == '\t') tabs++;
+  }
+  free(row->render);
+  row->render = malloc(row->size + tabs*(VOID_TAB_STOP - 1) + 1);
+
+  int idx = 0;
+  for(j = 0; j < row->size; j++){
+    if(row->chars[j] == '\t'){
+      row->render[idx++] = ' ';
+      while(idx % VOID_TAB_STOP != 0) row->render[idx++] = ' ';
+    } else{
+      row->render[idx++] = row->chars[j];
+    }
+  }
+  row->render[idx] = '\0';
+  row->rsize = idx;
+}
+
 void voided_append_row(char *s, size_t len){
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
 
@@ -127,6 +158,11 @@ void voided_append_row(char *s, size_t len){
   E.row[at].chars = malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
+
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  voided_update_row(&E.row[at]);
+
   E.numrows++;
 }
 
@@ -173,17 +209,19 @@ void ab_free(struct abuf *ab){
 /*** output ***/
 
 void voided_scroll(){
+  E.rx = E.cx;
+
   if(E.cy < E.rowoff){
     E.rowoff = E.cy;
   }
   if(E.cy >= E.rowoff + E.scrows){
     E.rowoff++;
   }
-  if(E.cx < E.coloff){
-    E.coloff = E.cx;
+  if(E.rx < E.coloff){
+    E.coloff = E.rx;
   }
-  if(E.cx >= E.coloff + E.sccols){
-    E.coloff = E.cx - E.sccols + 1;
+  if(E.rx >= E.coloff + E.sccols){
+    E.coloff = E.rx - E.sccols + 1;
   }
 }
 
@@ -208,10 +246,10 @@ void voided_draw_rows(struct abuf *ab){
         ab_append(ab, "~", 1);
       }
     } else {
-      int len = E.row[filerow].size - E.coloff;
+      int len = E.row[filerow].rsize - E.coloff;
       if(len < 0) len = 0;
       if(len > E.sccols) len = E.sccols;
-      ab_append(ab, &E.row[filerow].chars[E.coloff], len);
+      ab_append(ab, &E.row[filerow].render[E.coloff], len);
     }
     ab_append(ab, "\x1b[K", 3);
     if(y < E.scrows - 1){
@@ -250,7 +288,7 @@ void voided_move_cursor(char key){
   switch(E.mode){
     case NORMAL:
       switch(key){
-        case 'h':
+        case MV_LEFT:
           if(E.cx != 0){
             E.cx--;
           } else if(E.cy > 0){
@@ -258,17 +296,17 @@ void voided_move_cursor(char key){
             E.cx = E.row[E.cy].size;
           }
           break;
-        case 'j':
+        case MV_DOWN:
           if(E.cy < E.numrows){
             E.cy++;
           }
           break;
-        case 'k':
+        case MV_UP:
           if(E.cy != 0){
             E.cy--;
           }
           break;
-        case 'l':
+        case MV_RIGHT:
           if(row && E.cx < row->size){
             E.cx++;
           } else if(row && E.cx == row->size){
@@ -313,6 +351,7 @@ void voided_process_keypress(){
 void voided_init(){
   E.cx = 0;
   E.cy = 0;
+  E.rx = 0;
   E.rowoff = 0;
   E.coloff = 0;
   E.numrows = 0;
