@@ -282,8 +282,16 @@ void voided_draw_rows(struct abuf *ab){
 void voided_draw_status_bar(struct abuf *ab){
   ab_append(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
-  char *filename = strdup(E.filename);
-  int fn_size = strlen(E.filename);
+  char *filename;
+  int fn_size;
+  if(E.filename != NULL)
+  {
+    filename = strdup(E.filename);
+    fn_size = strlen(E.filename);
+  } else{
+    filename = NULL;
+    fn_size = 0;
+  }
   if (fn_size > 20){
     int j = 3;
     int i;
