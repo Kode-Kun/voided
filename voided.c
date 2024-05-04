@@ -64,6 +64,7 @@ struct ed_config E;        // global editor config
 
 /*** terminal ***/
 
+// kill voided and print errors
 void die(const char *s){
   write(STDOUT_FILENO, "\x1b[2J", 4);
   write(STDOUT_FILENO, "\x1b[H", 3);
@@ -72,11 +73,13 @@ void die(const char *s){
   exit(1);
 }
 
+// revert terminal to its initial state
 void disable_raw_mode(){
   if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_term) == -1)
   die("tcsetattr");
 }
 
+// put terminal in raw mode; for full access to input and output
 void enable_raw_mode(){
   if(tcgetattr(STDIN_FILENO, &E.orig_term) == -1) die("tcgetattr");
   atexit(disable_raw_mode);
@@ -92,6 +95,7 @@ void enable_raw_mode(){
   if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+// reads key from stdin and returns the key
 char voided_read_key(){
   int nread;
   char c;
@@ -101,6 +105,7 @@ char voided_read_key(){
   return c;
 }
 
+// asks the terminal for status information and puts it in rows and cols 
 int get_cursor_position(int *rows, int *cols){
   char buf[32];
   unsigned int i = 0;
@@ -134,6 +139,7 @@ int get_window_size(int *rows, int *cols){
 }
 /*** row operations ***/
 
+// converts cx to rx, dealing with tabs
 int row_cx_to_rx(erow *row, int cx){
   int rx = 0;
   int j;
@@ -145,6 +151,7 @@ int row_cx_to_rx(erow *row, int cx){
   return rx;
 }
 
+// updates the render variable in row (for rendering tabs)
 void voided_update_row(erow *row){
   int tabs = 0;
   int j;
@@ -167,6 +174,7 @@ void voided_update_row(erow *row){
   row->rsize = idx;
 }
 
+// appends s of size len to last row
 void voided_append_row(char *s, size_t len){
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
 
@@ -185,6 +193,7 @@ void voided_append_row(char *s, size_t len){
 
 /*** file i/o ***/
 
+// opens file and appends each line to a row 
 void voided_open(char *filename){
   free(E.filename);
   E.filename = strdup(filename);
@@ -207,6 +216,7 @@ void voided_open(char *filename){
 
 /*** append buffer ***/
 
+// append buffer struct used to write escape sequences and text to the terminal
 struct abuf{
   char *b;
   int len;
@@ -228,6 +238,7 @@ void ab_free(struct abuf *ab){
 
 /*** output ***/
 
+// operations to be done whenever cy changes or when rx goes out of bounds
 void voided_scroll(){
   E.rx = 0;
   if(E.cy < E.numrows){
@@ -248,6 +259,8 @@ void voided_scroll(){
   }
 }
 
+// iterates through each row and renders it accordingly
+// also deals with welcome message  
 void voided_draw_rows(struct abuf *ab){
   int y;
   for(y = 0; y < E.scrows; y++){
@@ -284,8 +297,7 @@ void voided_draw_status_bar(struct abuf *ab){
   char status[80], rstatus[80];
   char *filename;
   int fn_size;
-  if(E.filename != NULL)
-  {
+  if (E.filename != NULL){
     filename = strdup(E.filename);
     fn_size = strlen(E.filename);
   } else{
@@ -326,6 +338,7 @@ void voided_draw_msg_bar(struct abuf *ab){
     ab_append(ab, E.statusmsg, msglen);
 }
 
+// called every frame. most render-related functions are called here
 void voided_refresh_screen(){
   voided_scroll();
 
@@ -350,6 +363,7 @@ void voided_refresh_screen(){
   ab_free(&ab);
 }
 
+// sets status message and resets time
 void voided_set_status_msg(const char *fmt, ...){
   va_list ap;
   va_start(ap, fmt);
@@ -360,6 +374,7 @@ void voided_set_status_msg(const char *fmt, ...){
 
 /*** input ***/
 
+// called whenever a cursor movement key is pressed 
 void voided_move_cursor(char key){
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
 
@@ -403,6 +418,7 @@ void voided_move_cursor(char key){
   }
 }
 
+// called every frame, cursor-related functions are called here
 void voided_process_keypress(){
   char c = voided_read_key();
 
