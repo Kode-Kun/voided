@@ -33,10 +33,28 @@
 #define MV_DOWN 'j'
 #define MV_UP 'k'
 
+#define ESC 27
+
 /*** data ***/
+
+enum EdKey{
+  BACKSPACE = 127,
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  DEL_KEY,
+  HOME_KEY,
+  END_KEY,
+  PAGE_UP,
+  PAGE_DOWN,
+};
 
 enum Mode{
   NORMAL,
+  INSERT,
+  //VISUAL,
+  //COMMAND,
 };
 
 typedef struct erow{
@@ -191,6 +209,25 @@ void voided_append_row(char *s, size_t len){
   E.numrows++;
 }
 
+void voided_row_insert_char(erow *row, int at, int c){
+  if(at < 0 || at > row->size) at = row->size;
+  row->chars = realloc(row->chars, row->size + 2);
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+  row->size++;
+  row->chars[at] = c;
+  voided_update_row(row);
+}
+
+/*** editor operations ***/
+
+void voided_insert_char(int c){
+  if(E.cy == E.numrows){
+    voided_append_row("", 0);
+  }
+  voided_row_insert_char(&E.row[E.cy], E.cx, c);
+  E.cx++;
+}
+
 /*** file i/o ***/
 
 // opens file and appends each line to a row 
@@ -249,7 +286,7 @@ void voided_scroll(){
     E.rowoff = E.cy;
   }
   if(E.cy >= E.rowoff + E.scrows){
-    E.rowoff++;
+    E.rowoff = E.cy - E.scrows + 1;
   }
   if(E.rx < E.coloff){
     E.coloff = E.rx;
@@ -378,35 +415,31 @@ void voided_set_status_msg(const char *fmt, ...){
 void voided_move_cursor(char key){
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
 
-  switch(E.mode){
-    case NORMAL:
-      switch(key){
-        case MV_LEFT:
-          if(E.cx != 0){
-            E.cx--;
-          } else if(E.cy > 0){
-            E.cy--;
-            E.cx = E.row[E.cy].size;
-          }
-          break;
-        case MV_DOWN:
-          if(E.cy < E.numrows){
-            E.cy++;
-          }
-          break;
-        case MV_UP:
-          if(E.cy != 0){
-            E.cy--;
-          }
-          break;
-        case MV_RIGHT:
-          if(row && E.cx < row->size){
-            E.cx++;
-          } else if(row && E.cx == row->size){
-            E.cy++;
-            E.cx = 0;
-          }
-          break;
+  switch(key){
+    case MV_LEFT:
+      if(E.cx != 0){
+        E.cx--;
+      } else if(E.cy > 0){
+        E.cy--;
+        E.cx = E.row[E.cy].size;
+      }
+      break;
+    case MV_DOWN:
+      if(E.cy < E.numrows){
+        E.cy++;
+      }
+      break;
+    case MV_UP:
+      if(E.cy != 0){
+        E.cy--;
+      }
+      break;
+    case MV_RIGHT:
+      if(row && E.cx < row->size){
+        E.cx++;
+      } else if(row && E.cx == row->size){
+        E.cy++;
+        E.cx = 0;
       }
       break;
   }
@@ -418,46 +451,88 @@ void voided_move_cursor(char key){
   }
 }
 
+// handles normal mode key presses
+void voided_handle_normal(int c){
+  switch(c){
+    case CTRL_KEY('q'):
+      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[H", 3);
+      exit(0);
+      break;
+    case CTRL_KEY(MV_UP):
+    case CTRL_KEY(MV_DOWN):
+      {
+        if(c == CTRL_KEY(MV_UP)){
+          E.cy = E.rowoff;
+        } else if(c == CTRL_KEY(MV_DOWN)){
+          E.cy = E.rowoff + E.scrows - 1;
+          if(E.cy > E.numrows) E.cy = E.numrows;
+        }
+        int times = E.scrows;
+        while(times--){
+          voided_move_cursor(c == CTRL_KEY(MV_UP) ? MV_UP : MV_DOWN);
+        }
+      }
+      break;
+    case '$':
+      if(E.cy < E.numrows)
+        E.cx = E.row[E.cy].size;
+      break;
+    case MV_DOWN:
+    case MV_UP:
+    case MV_RIGHT:
+    case MV_LEFT:
+      voided_move_cursor(c);
+      break;
+    case 'i':
+      E.mode = INSERT;
+      voided_set_status_msg("--INSERT--");
+      break;
+  }
+}
+
+// handles insert mode key presses
+void voided_handle_insert(int c){
+  switch(c){
+    case ESC:
+      E.mode = NORMAL;
+      break;
+    case '\r':
+      // TODO
+      break;
+    case BACKSPACE:
+    case DEL_KEY:
+      // TODO
+      break;
+    case CTRL_KEY(MV_DOWN):
+      voided_move_cursor(MV_DOWN);
+      break;
+    case CTRL_KEY(MV_UP):
+      voided_move_cursor(MV_UP);
+      break;
+    case CTRL_KEY(MV_RIGHT):
+      voided_move_cursor(MV_RIGHT);
+      break;
+    case CTRL_KEY(MV_LEFT):
+      voided_move_cursor(MV_LEFT);
+      break;
+    default:
+      voided_insert_char(c);
+      break;
+  }
+}
+
 // called every frame, cursor-related functions are called here
 void voided_process_keypress(){
   char c = voided_read_key();
 
   switch(E.mode){
     case NORMAL:
-      switch(c){
-        case CTRL_KEY('q'):
-          write(STDOUT_FILENO, "\x1b[2J", 4);
-          write(STDOUT_FILENO, "\x1b[H", 3);
-          exit(0);
-          break;
-        // TODO: fix bug where CTRL_KEY(MV_DOWN) causes the cursor to get stuck on the status bar
-        // and only gets unstuck after a CTRL_KEY(MV_UP)
-        case CTRL_KEY(MV_UP):
-        case CTRL_KEY(MV_DOWN):
-          {
-            if(c == CTRL_KEY(MV_UP)){
-              E.cy = E.rowoff;
-            } else if(c == CTRL_KEY(MV_DOWN)){
-              E.cy += E.scrows - 1;
-              if(E.cy > E.numrows) E.cy = E.numrows;
-            }
-            int times = E.scrows;
-            while(times--){
-              voided_move_cursor(c == CTRL_KEY(MV_UP) ? MV_UP : MV_DOWN);
-            }
-          }
-          break;
-        case '$':
-          if(E.cy < E.numrows)
-            E.cx = E.row[E.cy].size;
-          break;
-        case MV_DOWN:
-        case MV_UP:
-        case MV_RIGHT:
-        case MV_LEFT:
-          voided_move_cursor(c);
-          break;
-      }
+      voided_handle_normal(c);
+      return;
+    case INSERT:
+      voided_handle_insert(c);
+      return;
   }
 }
 
