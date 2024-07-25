@@ -371,7 +371,7 @@ void voided_draw_msg_bar(struct abuf *ab){
   ab_append(ab, "\x1b[K", 3);
   int msglen = strlen(E.statusmsg);
   if(msglen > E.sccols) msglen = E.sccols;
-  if(msglen && time(NULL) - E.statusmsg_time < 5)
+  if((msglen && time(NULL) - E.statusmsg_time < 5) || E.statusmsg_time == 0)
     ab_append(ab, E.statusmsg, msglen);
 }
 
@@ -400,13 +400,17 @@ void voided_refresh_screen(){
   ab_free(&ab);
 }
 
-// sets status message and resets time
-void voided_set_status_msg(const char *fmt, ...){
+// sets status message and resets time if t isn't 0
+void voided_set_status_msg(const char *fmt, const char t, ...){
   va_list ap;
-  va_start(ap, fmt);
+  va_start(ap, t);
   vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
   va_end(ap);
-  E.statusmsg_time = time(NULL);
+  if(t != 0){
+    E.statusmsg_time = time(NULL);
+  } else{
+    E.statusmsg_time = 0;
+  }
 }
 
 /*** input ***/
@@ -452,7 +456,7 @@ void voided_move_cursor(char key){
 }
 
 // handles normal mode key presses
-void voided_handle_normal(int c){
+void voided_process_normal(int c){
   switch(c){
     case CTRL_KEY('q'):
       write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -486,16 +490,17 @@ void voided_handle_normal(int c){
       break;
     case 'i':
       E.mode = INSERT;
-      voided_set_status_msg("--INSERT--");
+      voided_set_status_msg("--INSERT--", 0);
       break;
   }
 }
 
 // handles insert mode key presses
-void voided_handle_insert(int c){
+void voided_process_insert(int c){
   switch(c){
     case ESC:
       E.mode = NORMAL;
+      voided_set_status_msg("", 0);
       break;
     case '\r':
       // TODO
@@ -528,10 +533,10 @@ void voided_process_keypress(){
 
   switch(E.mode){
     case NORMAL:
-      voided_handle_normal(c);
+      voided_process_normal(c);
       return;
     case INSERT:
-      voided_handle_insert(c);
+      voided_process_insert(c);
       return;
   }
 }
@@ -563,7 +568,7 @@ int main(int argc, char **argv){
     voided_open(argv[1]);
   }
 
-  voided_set_status_msg("HELP: Ctrl-Q = quit");
+  voided_set_status_msg("HELP: Ctrl-Q = quit", 1);
 
   while(1){
     voided_refresh_screen();
