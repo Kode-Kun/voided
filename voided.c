@@ -2,6 +2,8 @@
 // now because I'm using a completely different set of keybindings than
 // the original tutorial.
 
+// TODO: add quit confirmation when dirty bit is set
+
 /*** includes ***/
 
 #define _DEFAULT_SOURCE
@@ -72,6 +74,7 @@ struct ed_config{
   int scrows, sccols;      // screen rows and screen columns (receives value from get_window_size())
   int numrows;             // total number of rows
   erow *row;               // holds all rows in the currently opened file
+  int dirty;
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;   // time elapsed since status msg was first drawn
@@ -212,6 +215,7 @@ void voided_append_row(char *s, size_t len){
   voided_update_row(&E.row[at]);
 
   E.numrows++;
+  E.dirty++;
 }
 
 void voided_row_insert_char(erow *row, int at, int c){
@@ -221,6 +225,7 @@ void voided_row_insert_char(erow *row, int at, int c){
   row->size++;
   row->chars[at] = c;
   voided_update_row(row);
+  E.dirty++;
 }
 
 /*** editor operations ***/
@@ -278,6 +283,7 @@ void voided_open(char *filename){
   }
   free(line);
   fclose(fp);
+  E.dirty = 0;
 }
 
 char voided_save(){
@@ -295,6 +301,7 @@ char voided_save(){
 	close(fd);
 	free(buf);
 	voided_set_status_msg("wrote %d bytes to '%s'", 1, len, E.filename);
+	E.dirty = 0;
 	return 0;
       }
     }
@@ -402,8 +409,9 @@ void voided_draw_status_bar(struct abuf *ab){
       filename[(20 - (j-i))] = '.';
     }
   }
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-                     filename ? filename : "[No Name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+                     filename ? filename : "[No Name]", E.numrows,
+		     E.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
   if(len > E.sccols) len = E.sccols;
   ab_append(ab, status, len);
@@ -539,6 +547,12 @@ void voided_process_normal(int c){
       if(E.cy < E.numrows)
         E.cx = E.row[E.cy].size;
       break;
+    case '^':
+      E.cx = 0;
+      while(E.row[E.cy].chars[E.cx] == ' '){
+	E.cx++;
+      }
+      break;
     case MV_DOWN:
     case MV_UP:
     case MV_RIGHT:
@@ -608,6 +622,7 @@ void voided_init(){
   E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.dirty = 0;
   E.filename = NULL;
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
