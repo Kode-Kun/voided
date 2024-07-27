@@ -81,6 +81,10 @@ struct ed_config{
 
 struct ed_config E;        // global editor config
 
+/*** prototypes ***/
+
+void voided_set_status_msg(const char *fmt, const char t, ...);
+
 /*** terminal ***/
 
 // kill voided and print errors
@@ -229,19 +233,6 @@ void voided_insert_char(int c){
   E.cx++;
 }
 
-// sets status message and resets time if t isn't 0
-void voided_set_status_msg(const char *fmt, const char t, ...){
-  va_list ap;
-  va_start(ap, t);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-  if(t != 0){
-    E.statusmsg_time = time(NULL);
-  } else{
-    E.statusmsg_time = 0;
-  }
-}
-
 /*** file i/o ***/
 
 // converts all rows into one big heap-allocated buffer.
@@ -249,12 +240,14 @@ void voided_set_status_msg(const char *fmt, const char t, ...){
 char *voided_rows_to_string(int *buflen){
   int totlen = 0;
   int j;
+
   for(j = 0; j < E.numrows; j++)
     totlen += E.row[j].size + 1;
   *buflen = totlen;
 
   char *buf = malloc(totlen);
   char *p = buf;
+  
   for(j = 0; j < E.numrows; j++){
     memcpy(p, E.row[j].chars, E.row[j].size);
     p += E.row[j].size;
@@ -276,6 +269,7 @@ void voided_open(char *filename){
   char *line = NULL;
   size_t linecap = 0;
   ssize_t linelen;
+
   while((linelen = getline(&line, &linecap, fp)) != -1){
     while(linelen > 0 && (line[linelen - 1] == '\n' ||
                           line[linelen - 1] == '\r'))
@@ -460,6 +454,18 @@ void voided_refresh_screen(){
   ab_free(&ab);
 }
 
+// sets status message and resets time if t isn't 0
+void voided_set_status_msg(const char *fmt, const char t, ...){
+  va_list ap;
+  va_start(ap, t);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  if(t != 0){
+    E.statusmsg_time = time(NULL);
+  } else{
+    E.statusmsg_time = 0;
+  }
+}
 
 /*** input ***/
 
