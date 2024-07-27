@@ -25,7 +25,7 @@
 
 /*** defines ***/
 
-#define VOID_VERSION "0.0.1"
+#define VOID_VERSION "0.1.0"
 #define VOID_TAB_STOP 8
 
 // keyboard-related macros
