@@ -10,6 +10,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -228,7 +229,41 @@ void voided_insert_char(int c){
   E.cx++;
 }
 
+// sets status message and resets time if t isn't 0
+void voided_set_status_msg(const char *fmt, const char t, ...){
+  va_list ap;
+  va_start(ap, t);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  if(t != 0){
+    E.statusmsg_time = time(NULL);
+  } else{
+    E.statusmsg_time = 0;
+  }
+}
+
 /*** file i/o ***/
+
+// converts all rows into one big heap-allocated buffer.
+// ***DO NOT FORGET TO FREE THE RETURNED BUF!***
+char *voided_rows_to_string(int *buflen){
+  int totlen = 0;
+  int j;
+  for(j = 0; j < E.numrows; j++)
+    totlen += E.row[j].size + 1;
+  *buflen = totlen;
+
+  char *buf = malloc(totlen);
+  char *p = buf;
+  for(j = 0; j < E.numrows; j++){
+    memcpy(p, E.row[j].chars, E.row[j].size);
+    p += E.row[j].size;
+    *p = '\n';
+    p++;
+  }
+
+  return buf;
+}
 
 // opens file and appends each line to a row 
 void voided_open(char *filename){
@@ -249,6 +284,31 @@ void voided_open(char *filename){
   }
   free(line);
   fclose(fp);
+}
+
+char voided_save(){
+  if(E.filename == NULL){
+    voided_set_status_msg("failed to save file", 1);
+    return 1;      // dont do anything if its a new file
+  }
+  int len;
+  char *buf = voided_rows_to_string(&len);
+
+  int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+  if(fd != -1){
+    if(ftruncate(fd, len) != -1){
+      if(write(fd, buf, len) == len){
+	close(fd);
+	free(buf);
+	voided_set_status_msg("wrote %d bytes to '%s'", 1, len, E.filename);
+	return 0;
+      }
+    }
+    close(fd);
+  }
+  free(buf);
+  voided_set_status_msg("can't save! I/O error: %s", 1, strerror(errno));
+  return 0;
 }
 
 /*** append buffer ***/
@@ -400,18 +460,6 @@ void voided_refresh_screen(){
   ab_free(&ab);
 }
 
-// sets status message and resets time if t isn't 0
-void voided_set_status_msg(const char *fmt, const char t, ...){
-  va_list ap;
-  va_start(ap, t);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-  if(t != 0){
-    E.statusmsg_time = time(NULL);
-  } else{
-    E.statusmsg_time = 0;
-  }
-}
 
 /*** input ***/
 
@@ -462,6 +510,9 @@ void voided_process_normal(int c){
       write(STDOUT_FILENO, "\x1b[2J", 4);
       write(STDOUT_FILENO, "\x1b[H", 3);
       exit(0);
+      break;
+    case CTRL_KEY('s'):
+      voided_save();
       break;
     case CTRL_KEY(MV_UP):
     case CTRL_KEY(MV_DOWN):
@@ -568,7 +619,7 @@ int main(int argc, char **argv){
     voided_open(argv[1]);
   }
 
-  voided_set_status_msg("HELP: Ctrl-Q = quit", 1);
+  voided_set_status_msg("HELP: Ctrl-S = save | Ctrl-Q = quit", 1);
 
   while(1){
     voided_refresh_screen();
