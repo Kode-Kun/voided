@@ -563,6 +563,11 @@ void voided_process_normal(int c){
       E.mode = INSERT;
       voided_set_status_msg("--INSERT--", 0);
       break;
+    case 'a':
+      E.mode = INSERT;
+      if(E.cx != E.row[E.cy].size) E.cx++;
+      voided_set_status_msg("--INSERT--", 0);
+      break;
   }
 }
 
