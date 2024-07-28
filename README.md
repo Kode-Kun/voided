@@ -6,7 +6,7 @@ All you need to build it is a C compiler.
 
 `voided` is still in very early development. There are plans for [suckless](https://suckless.org/)-style patches to add optional functionality in the future, once a stable API is reached.  
 
-# Building
+## Building
 
 The easiest way to build `voided` is with `make`, although it is by no means obligatory.
 
