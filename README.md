@@ -2,7 +2,7 @@
 
 `voided` is a simple, modal, terminal-based text editor written in C using [kilo](https://github.com/antirez/kilo) as a base. 
 It has no dependencies except glibc, all rendering is done through VT100 escape sequences.
-All you need is a C compiler.
+All you need to build it is a C compiler.
 
 `voided` is still in very early development. There are plans for [suckless](https://suckless.org/)-style patches to add optional functionality in the future, once a stable API is reached.  
 
