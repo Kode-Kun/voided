@@ -25,7 +25,7 @@
 
 /*** defines ***/
 
-#define VOID_VERSION "0.1.0"
+#define VOID_VERSION "0.2.0"
 #define VOID_TAB_STOP 8
 
 #define HELP_MSG "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-H = help msg"
@@ -202,11 +202,13 @@ void voided_update_row(erow *row){
   row->rsize = idx;
 }
 
-// appends s of size len to last row
-void voided_append_row(char *s, size_t len){
-  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+// appends s of size len to row in position at
+void voided_insert_row(int at, char *s, size_t len){
+  if(at < 0 || at > E.numrows) return;
 
-  int at = E.numrows;
+  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
+
   E.row[at].size = len;
   E.row[at].chars = malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
@@ -264,10 +266,25 @@ void voided_row_del_char(erow *row, int at){
 
 void voided_insert_char(int c){
   if(E.cy == E.numrows){
-    voided_append_row("", 0);
+    voided_insert_row(E.numrows, "", 0);
   }
   voided_row_insert_char(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+void voided_insert_newline(){
+  if(E.cx == 0){
+    voided_insert_row(E.cy, "", 0);
+  } else{
+    erow *row = &E.row[E.cy];
+    voided_insert_row(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+    row = &E.row[E.cy];
+    row->size = E.cx;
+    row->chars[row->size] = '\0';
+    voided_update_row(row);
+  }
+  E.cy++;
+  E.cx = 0;
 }
 
 void voided_del_char(){
@@ -327,7 +344,7 @@ void voided_open(char *filename){
     while(linelen > 0 && (line[linelen - 1] == '\n' ||
                           line[linelen - 1] == '\r'))
       linelen--;
-    voided_append_row(line, linelen);
+    voided_insert_row(E.numrows, line, linelen);
   }
   free(line);
   fclose(fp);
@@ -619,6 +636,13 @@ void voided_process_normal(int c){
       if(E.cx != E.row[E.cy].size) E.cx++;
       voided_set_status_msg("--INSERT--", 0);
       break;
+    case 'o':
+      E.cy++;
+      E.cx = 0;
+      voided_insert_row(E.cy, "", 0);
+      E.mode = INSERT;
+      voided_set_status_msg("--INSERT--", 0);
+      break;
   }
 }
 
@@ -630,7 +654,7 @@ void voided_process_insert(int c){
       voided_set_status_msg("", 0);
       break;
     case '\r':
-      // TODO
+      voided_insert_newline();
       break;
     case BACKSPACE:
       voided_del_char();
