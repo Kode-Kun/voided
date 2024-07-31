@@ -28,6 +28,8 @@
 #define VOID_VERSION "0.1.0"
 #define VOID_TAB_STOP 8
 
+#define HELP_MSG "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-H = help msg"
+
 // keyboard-related macros
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -218,12 +220,42 @@ void voided_append_row(char *s, size_t len){
   E.dirty++;
 }
 
+void voided_free_row(erow *row){
+  free(row->render);
+  free(row->chars);
+}
+
+void voided_del_row(int at){
+  if(at < 0 || at >= E.numrows) return;
+  voided_free_row(&E.row[at]);
+  memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+  E.numrows--;
+  E.dirty++;
+}
+
 void voided_row_insert_char(erow *row, int at, int c){
   if(at < 0 || at > row->size) at = row->size;
   row->chars = realloc(row->chars, row->size + 2);
   memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
   row->size++;
   row->chars[at] = c;
+  voided_update_row(row);
+  E.dirty++;
+}
+
+void voided_row_append_string(erow *row, char *s, size_t len){
+  row->chars = realloc (row->chars, row->size + len + 1);
+  memcpy(&row->chars[row->size], s, len);
+  row->size += len;
+  row->chars[row->size] = '\0';
+  voided_update_row(row);
+  E.dirty++;
+}
+
+void voided_row_del_char(erow *row, int at){
+  if(at < 0 || at >= row->size) return;
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+  row->size--;
   voided_update_row(row);
   E.dirty++;
 }
@@ -236,6 +268,22 @@ void voided_insert_char(int c){
   }
   voided_row_insert_char(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+void voided_del_char(){
+  if(E.cy == E.numrows) return;
+  if(E.cx == 0 && E.cy == 0) return;
+
+  erow *row = &E.row[E.cy];
+  if(E.cx > 0){
+    voided_row_del_char(row, E.cx - 1);
+    E.cx--;
+  } else{
+    E.cx = E.row[E.cy - 1].size;
+    voided_row_append_string(&E.row[E.cy - 1], row->chars, row->size);
+    voided_del_row(E.cy);
+    E.cy--;
+  }
 }
 
 /*** file i/o ***/
@@ -528,6 +576,9 @@ void voided_process_normal(int c){
     case CTRL_KEY('s'):
       voided_save();
       break;
+    case CTRL_KEY('h'):
+      voided_set_status_msg(HELP_MSG, 1);
+      break;
     case CTRL_KEY(MV_UP):
     case CTRL_KEY(MV_DOWN):
       {
@@ -582,6 +633,8 @@ void voided_process_insert(int c){
       // TODO
       break;
     case BACKSPACE:
+      voided_del_char();
+      break;
     case DEL_KEY:
       // TODO
       break;
@@ -645,7 +698,7 @@ int main(int argc, char **argv){
     voided_open(argv[1]);
   }
 
-  voided_set_status_msg("HELP: Ctrl-S = save | Ctrl-Q = quit", 1);
+  voided_set_status_msg(HELP_MSG, 1);
 
   while(1){
     voided_refresh_screen();
