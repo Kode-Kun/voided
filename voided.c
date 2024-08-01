@@ -25,10 +25,12 @@
 
 /*** defines ***/
 
-#define VOID_VERSION "0.2.0"
+#define VOID_VERSION "0.2.1"
 #define VOID_TAB_STOP 8
+#define VOID_TAB_SIZE 2
+#define PROMPT_SIZE 128
 
-#define HELP_MSG "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-H = help msg"
+#define HELP_MSG "HELP: :w = save | :q = quit | Ctrl-H = help msg"
 
 // keyboard-related macros
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -85,10 +87,14 @@ struct ed_config{
 };
 
 struct ed_config E;        // global editor config
-
+char tempbuf;              /* to deal with that pesky "label can only be part of a statement"
+			      compiler warning */
 /*** prototypes ***/
 
 void voided_set_status_msg(const char *fmt, const char t, ...);
+void voided_refresh_screen();
+char *voided_prompt(char *prompt);
+void voided_process_cmd(char *buf);
 
 /*** terminal ***/
 
@@ -107,10 +113,15 @@ void disable_raw_mode(){
   die("tcsetattr");
 }
 
+void voided_atexit(){
+  disable_raw_mode();
+  printf("\033c"); /* '\033' is same as '\x1b' */
+}
+
 // put terminal in raw mode; for full access to input and output
 void enable_raw_mode(){
   if(tcgetattr(STDIN_FILENO, &E.orig_term) == -1) die("tcgetattr");
-  atexit(disable_raw_mode);
+  atexit(voided_atexit);
 
   struct termios raw = E.orig_term;
   raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
@@ -353,8 +364,11 @@ void voided_open(char *filename){
 
 char voided_save(){
   if(E.filename == NULL){
-    voided_set_status_msg("failed to save file", 1);
-    return 1;      // dont do anything if its a new file
+    E.filename = voided_prompt("save as: %s");
+    if(E.filename == NULL){
+      voided_set_status_msg("save aborted", 1);
+      return 1;
+    }
   }
   int len;
   char *buf = voided_rows_to_string(&len);
@@ -542,6 +556,41 @@ void voided_set_status_msg(const char *fmt, const char t, ...){
 
 /*** input ***/
 
+char *voided_prompt(char *prompt){
+  size_t bufsize = PROMPT_SIZE;
+  char *buf = malloc(bufsize);
+
+  size_t buflen = 0;
+  buf[0] = '\0';
+
+  while(1){
+    voided_set_status_msg(prompt, 0, buf);
+    voided_refresh_screen();
+
+    int c = voided_read_key();
+
+    if(c == BACKSPACE){
+      if(buflen != 0) buf[--buflen] = '\0';
+    } else if(c == '\x1b'){
+      voided_set_status_msg("", 1);
+      free(buf);
+      return NULL;
+    } else if(c == '\r'){
+      if(buflen != 0){
+	voided_set_status_msg("", 0);
+	return buf;
+      }
+    } else if(!iscntrl(c) && c < PROMPT_SIZE){
+      if(buflen == bufsize - 1){
+	bufsize *= 2;
+	buf = realloc(buf, bufsize);
+      }
+      buf[buflen++] = c;
+      buf[buflen] = '\0';
+    }
+  }
+}
+
 // called whenever a cursor movement key is pressed 
 void voided_move_cursor(char key){
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
@@ -585,14 +634,14 @@ void voided_move_cursor(char key){
 // handles normal mode key presses
 void voided_process_normal(int c){
   switch(c){
-    case CTRL_KEY('q'):
-      write(STDOUT_FILENO, "\x1b[2J", 4);
-      write(STDOUT_FILENO, "\x1b[H", 3);
-      exit(0);
-      break;
-    case CTRL_KEY('s'):
-      voided_save();
-      break;
+    /* case CTRL_KEY('q'): */
+    /*   write(STDOUT_FILENO, "\x1b[2J", 4); */
+    /*   write(STDOUT_FILENO, "\x1b[H", 3); */
+    /*   exit(0); */
+    /*   break; */
+    /* case CTRL_KEY('s'): */
+    /*   voided_save(); */
+    /*   break; */
     case CTRL_KEY('h'):
       voided_set_status_msg(HELP_MSG, 1);
       break;
@@ -617,7 +666,7 @@ void voided_process_normal(int c){
       break;
     case '^':
       E.cx = 0;
-      while(E.row[E.cy].chars[E.cx] == ' '){
+      while(E.row[E.cy].chars[E.cx] == ' ' || E.row[E.cy].chars[E.cx] == '\t'){
 	E.cx++;
       }
       break;
@@ -642,6 +691,13 @@ void voided_process_normal(int c){
       voided_insert_row(E.cy, "", 0);
       E.mode = INSERT;
       voided_set_status_msg("--INSERT--", 0);
+      break;
+    case ':':
+      tempbuf = 'c';    //comment this line out for an annoying compiler warning ;)
+      char *buf;
+      buf = voided_prompt(":%s");
+      voided_process_cmd(buf);
+      free(buf);
       break;
   }
 }
@@ -674,9 +730,46 @@ void voided_process_insert(int c){
     case CTRL_KEY(MV_LEFT):
       voided_move_cursor(MV_LEFT);
       break;
+  case '\t':
+    tempbuf = 'c';
+    int times = VOID_TAB_SIZE;
+    while(times--){
+      voided_insert_char(' ');
+    }
+    break;
     default:
       voided_insert_char(c);
       break;
+  }
+}
+
+void voided_process_cmd(char *buf){
+  if(buf == NULL){
+    return;
+  }
+  int i;
+  for(i = 0; i < PROMPT_SIZE; i++){
+    int c = buf[i];
+    switch(c){
+      case 'w':
+        voided_save();
+	break;
+      case 'q':
+        if(buf[(i + 1)] == '\0'){
+          write(STDOUT_FILENO, "\x1b[2J", 4);
+          write(STDOUT_FILENO, "\x1b[H", 3);
+          exit(0);
+        } else{
+	  voided_set_status_msg("invalid command ('q' should come after any other command)", 1);
+	  return;
+        }
+        break;
+      case '\0':
+	return;
+      default:
+        voided_set_status_msg("invalid command", 1);
+        break;
+    }
   }
 }
 
