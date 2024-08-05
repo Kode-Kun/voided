@@ -556,6 +556,7 @@ void voided_set_status_msg(const char *fmt, const char t, ...){
 
 /*** input ***/
 
+// takes in input from the status message bar with a prompt 
 char *voided_prompt(char *prompt){
   size_t bufsize = PROMPT_SIZE;
   char *buf = malloc(bufsize);
@@ -743,6 +744,7 @@ void voided_process_insert(int c){
   }
 }
 
+// handles commands (anything typed after ':')
 void voided_process_cmd(char *buf){
   if(buf == NULL){
     return;
@@ -752,8 +754,16 @@ void voided_process_cmd(char *buf){
     int c = buf[i];
     switch(c){
       case 'w':
+	if(buf[(i + 1)] == ' ' && buf[(i + 2)] != '\0'){
+	  size_t fnsize = 0;
+	  for(int j = 0; j < (PROMPT_SIZE - 2); j++){
+	    if(buf[j + (i + 2)] != '\0') fnsize++;
+	    else break;
+	  }
+	  E.filename = memcpy(E.filename, &buf[(i + 2)], fnsize);
+	}
         voided_save();
-	break;
+	return;
       case 'q':
         if(buf[(i + 1)] == '\0'){
           write(STDOUT_FILENO, "\x1b[2J", 4);
