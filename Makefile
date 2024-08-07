@@ -13,6 +13,9 @@ INSTDIR=/usr/local/bin/
 default:
 	${CC} ${SRC} -o ${TARGET} ${CFLAGS}
 
+db:
+	${CC} ${SRC} -o ${TARGET} ${CFLAGS} -g
+
 clean:
 	rm ${TARGET}
 

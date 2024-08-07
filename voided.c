@@ -25,7 +25,7 @@
 
 /*** defines ***/
 
-#define VOID_VERSION "0.2.1"
+#define VOID_VERSION "0.2.2"
 #define VOID_TAB_STOP 8
 #define VOID_TAB_SIZE 2
 #define PROMPT_SIZE 128
@@ -667,8 +667,10 @@ void voided_process_normal(int c){
       break;
     case '^':
       E.cx = 0;
-      while(E.row[E.cy].chars[E.cx] == ' ' || E.row[E.cy].chars[E.cx] == '\t'){
-	E.cx++;
+      if(E.cy < E.numrows){
+	while(E.row[E.cy].chars[E.cx] == ' ' || E.row[E.cy].chars[E.cx] == '\t'){
+	  voided_move_cursor(MV_RIGHT);
+	}
       }
       break;
     case MV_DOWN:
@@ -683,11 +685,11 @@ void voided_process_normal(int c){
       break;
     case 'a':
       E.mode = INSERT;
-      if(E.cx != E.row[E.cy].size) E.cx++;
+      voided_move_cursor(MV_RIGHT);
       voided_set_status_msg("--INSERT--", 0);
       break;
     case 'o':
-      E.cy++;
+      voided_move_cursor(MV_DOWN);
       E.cx = 0;
       voided_insert_row(E.cy, "", 0);
       E.mode = INSERT;
