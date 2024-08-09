@@ -179,7 +179,7 @@ int get_window_size(int *rows, int *cols){
 /*** row operations ***/
 
 // converts cx to rx, dealing with tabs
-int row_cx_to_rx(erow *row, int cx){
+int row_cx_to_rx(erow *row, const int cx){
   int rx = 0;
   int j;
   for(j = 0; j < cx; j++){
@@ -214,7 +214,7 @@ void voided_update_row(erow *row){
 }
 
 // appends s of size len to row in position at
-void voided_insert_row(int at, char *s, size_t len){
+void voided_insert_row(const int at, const char *s, const size_t len){
   if(at < 0 || at > E.numrows) return;
 
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
@@ -238,7 +238,7 @@ void voided_free_row(erow *row){
   free(row->chars);
 }
 
-void voided_del_row(int at){
+void voided_del_row(const int at){
   if(at < 0 || at >= E.numrows) return;
   voided_free_row(&E.row[at]);
   memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
@@ -246,7 +246,7 @@ void voided_del_row(int at){
   E.dirty++;
 }
 
-void voided_row_insert_char(erow *row, int at, int c){
+void voided_row_insert_char(erow *row, int at, const int c){
   if(at < 0 || at > row->size) at = row->size;
   row->chars = realloc(row->chars, row->size + 2);
   memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
@@ -256,7 +256,7 @@ void voided_row_insert_char(erow *row, int at, int c){
   E.dirty++;
 }
 
-void voided_row_append_string(erow *row, char *s, size_t len){
+void voided_row_append_string(erow *row, const char *s, const size_t len){
   row->chars = realloc (row->chars, row->size + len + 1);
   memcpy(&row->chars[row->size], s, len);
   row->size += len;
@@ -265,7 +265,7 @@ void voided_row_append_string(erow *row, char *s, size_t len){
   E.dirty++;
 }
 
-void voided_row_del_char(erow *row, int at){
+void voided_row_del_char(erow *row, const int at){
   if(at < 0 || at >= row->size) return;
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
   row->size--;
@@ -275,7 +275,7 @@ void voided_row_del_char(erow *row, int at){
 
 /*** editor operations ***/
 
-void voided_insert_char(int c){
+void voided_insert_char(const int c){
   if(E.cy == E.numrows){
     voided_insert_row(E.numrows, "", 0);
   }
@@ -340,7 +340,7 @@ char *voided_rows_to_string(int *buflen){
 }
 
 // opens file and appends each line to a row 
-void voided_open(char *filename){
+void voided_open(const char *filename){
   free(E.filename);
   E.filename = strdup(filename);
 
@@ -401,7 +401,7 @@ struct abuf{
 
 #define ABUF_INIT {NULL, 0}
 
-void ab_append(struct abuf *ab, const char *s, int len){
+void ab_append(struct abuf *ab, const char *s, const int len){
   char *new = realloc(ab->b, ab->len + len);
   if(new == NULL) return;
   memcpy(&new[ab->len], s, len);
@@ -593,7 +593,7 @@ char *voided_prompt(char *prompt){
 }
 
 // called whenever a cursor movement key is pressed 
-void voided_move_cursor(char key){
+void voided_move_cursor(const char key){
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
 
   switch(key){
@@ -633,7 +633,7 @@ void voided_move_cursor(char key){
 }
 
 // handles normal mode key presses
-void voided_process_normal(int c){
+void voided_process_normal(const int c){
   switch(c){
     /* case CTRL_KEY('q'): */
     /*   write(STDOUT_FILENO, "\x1b[2J", 4); */
@@ -706,7 +706,7 @@ void voided_process_normal(int c){
 }
 
 // handles insert mode key presses
-void voided_process_insert(int c){
+void voided_process_insert(const int c){
   switch(c){
     case ESC:
       E.mode = NORMAL;
@@ -762,7 +762,9 @@ void voided_process_cmd(char *buf){
 	    if(buf[j + (i + 2)] != '\0') fnsize++;
 	    else break;
 	  }
-	  E.filename = memcpy(E.filename, &buf[(i + 2)], fnsize);
+	  free(E.filename);
+	  E.filename = malloc(fnsize);
+	  memcpy(E.filename, &buf[(i + 2)], fnsize);
 	}
         voided_save();
 	return;
