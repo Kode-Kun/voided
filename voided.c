@@ -30,7 +30,7 @@
 #define VOID_TAB_SIZE 2
 #define PROMPT_SIZE 128
 
-#define HELP_MSG "HELP: :w = save | :q = quit | Ctrl-H = help msg"
+#define HELP_MSG "HELP: :w = save | :q = quit | / = find | Ctrl-H = help msg"
 
 // keyboard-related macros
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -179,7 +179,7 @@ int get_window_size(int *rows, int *cols){
 /*** row operations ***/
 
 // converts cx to rx, dealing with tabs
-int row_cx_to_rx(erow *row, const int cx){
+int voided_row_cx_to_rx(erow *row, const int cx){
   int rx = 0;
   int j;
   for(j = 0; j < cx; j++){
@@ -190,7 +190,20 @@ int row_cx_to_rx(erow *row, const int cx){
   return rx;
 }
 
-// updates the render variable in row (for rendering tabs)
+int voided_row_rx_to_cx(erow *row, const int rx){
+  int cur_rx = 0;
+  int cx;
+  for(cx = 0; cx < row->size; cx++){
+    if(row->chars[cx] == '\t')
+      cur_rx += (VOID_TAB_STOP - 1) - (cur_rx % VOID_TAB_STOP);
+    cur_rx++;
+
+    if(cur_rx > rx) return cx;
+  }
+  return cx;
+}
+
+// updates the render string in row (for rendering tabs)
 void voided_update_row(erow *row){
   int tabs = 0;
   int j;
@@ -391,6 +404,26 @@ char voided_save(){
   return 0;
 }
 
+/*** find ***/
+
+void voided_find(){
+  char *query = voided_prompt("/%s");
+  if(query == NULL) return;
+
+  int i;
+  for(i = 0; i < E.numrows; i++){
+    erow *row = &E.row[i];
+    char *match = strstr(row->render, query);
+    if(match){
+      E.cy = i;
+      E.cx = voided_row_rx_to_cx(row, match - row->render);
+      E.rowoff = E.numrows;
+      break;
+    }
+  }
+  free(query);
+}
+
 /*** append buffer ***/
 
 // append buffer struct used to write escape sequences and text to the terminal
@@ -419,7 +452,7 @@ void ab_free(struct abuf *ab){
 void voided_scroll(){
   E.rx = 0;
   if(E.cy < E.numrows){
-    E.rx = row_cx_to_rx(&E.row[E.cy], E.cx);
+    E.rx = voided_row_cx_to_rx(&E.row[E.cy], E.cx);
   }
 
   if(E.cy < E.rowoff){
@@ -600,9 +633,6 @@ void voided_move_cursor(const char key){
     case MV_LEFT:
       if(E.cx != 0){
         E.cx--;
-      } else if(E.cy > 0){
-        E.cy--;
-        E.cx = E.row[E.cy].size;
       }
       break;
     case MV_DOWN:
@@ -618,9 +648,6 @@ void voided_move_cursor(const char key){
     case MV_RIGHT:
       if(row && E.cx < row->size){
         E.cx++;
-      } else if(row && E.cx == row->size){
-        E.cy++;
-        E.cx = 0;
       }
       break;
   }
@@ -635,14 +662,6 @@ void voided_move_cursor(const char key){
 // handles normal mode key presses
 void voided_process_normal(const int c){
   switch(c){
-    /* case CTRL_KEY('q'): */
-    /*   write(STDOUT_FILENO, "\x1b[2J", 4); */
-    /*   write(STDOUT_FILENO, "\x1b[H", 3); */
-    /*   exit(0); */
-    /*   break; */
-    /* case CTRL_KEY('s'): */
-    /*   voided_save(); */
-    /*   break; */
     case CTRL_KEY('h'):
       voided_set_status_msg(HELP_MSG, 1);
       break;
@@ -670,6 +689,59 @@ void voided_process_normal(const int c){
       if(E.cy < E.numrows){
 	while(E.row[E.cy].chars[E.cx] == ' ' || E.row[E.cy].chars[E.cx] == '\t'){
 	  voided_move_cursor(MV_RIGHT);
+	}
+      }
+      break;
+    case 'e':
+      if(E.cy == E.numrows) break;
+      if(E.row[E.cy].chars[E.cx + 1] == ' ') voided_move_cursor(MV_RIGHT);
+      while(1){
+	char a = E.row[E.cy].chars[E.cx];
+	char b = E.row[E.cy].chars[E.cx + 1];
+	if(a == ' ' && b == ' '){
+	  while(E.row[E.cy].chars[E.cx] == ' ') voided_move_cursor(MV_RIGHT);
+	}
+	if((isalnum(a) && !isalnum(b)) || b == '\0') break;
+	if(!isalnum(a) && a != ' ') break;
+	switch(a){
+	case ' ':
+	  if(b == '\n' || b == '\r') break;
+	  voided_move_cursor(MV_RIGHT);
+	  break;
+	case '\r':
+	case '\n':
+	  return;
+	default:
+	  if(b == ' ' || b == '\n' || b == '\r') return;
+	  voided_move_cursor(MV_RIGHT);
+	}
+      }
+      break;
+    case 'b':
+      // TODO: fix b key (make it stop going backwards when there's
+      // nothing but whitespace or tabs ahead)
+      if(E.cy == E.numrows) break;
+      if(E.row[E.cy].chars[E.cx - 1] == ' ') voided_move_cursor(MV_LEFT);
+      while(1){
+	char a = E.row[E.cy].chars[E.cx];
+	char b = E.row[E.cy].chars[E.cx - 1];
+	/* if(a == ' ' && b == ' '){ */
+	/*   while(E.row[E.cy].chars[E.cx] == ' ') voided_move_cursor(MV_LEFT); */
+	/* } */
+	if((isalnum(a) && !isalnum(b)) || b == '\0') break;
+	if(!isalnum(a) && a != ' ') break;
+	if(E.cx == 0) return;
+	switch(a){
+	case ' ':
+	  if(b == '\n' || b == '\r') break;
+	  voided_move_cursor(MV_LEFT);
+	  break;
+	case '\r':
+	case '\n':
+	  return;
+	default:
+	  if(b == ' ' || b == '\n' || b == '\r') return;
+	  voided_move_cursor(MV_LEFT);
 	}
       }
       break;
@@ -701,6 +773,9 @@ void voided_process_normal(const int c){
       buf = voided_prompt(":%s");
       voided_process_cmd(buf);
       free(buf);
+      break;
+    case '/':
+      voided_find();
       break;
   }
 }
@@ -756,16 +831,21 @@ void voided_process_cmd(char *buf){
     int c = buf[i];
     switch(c){
       case 'w':
-	if(buf[(i + 1)] == ' ' && buf[(i + 2)] != '\0'){
-	  size_t fnsize = 0;
-	  for(int j = 0; j < (PROMPT_SIZE - 2); j++){
-	    if(buf[j + (i + 2)] != '\0') fnsize++;
-	    else break;
-	  }
-	  free(E.filename);
-	  E.filename = malloc(fnsize);
-	  memcpy(E.filename, &buf[(i + 2)], fnsize);
-	}
+	// TODO: fix the following commented section.
+	// This allows typing ':w <filename>' to save-as
+	// As it is now, it completely breaks the program when used on a file without
+	// a filename.
+
+	/* if(buf[(i + 1)] == ' ' && buf[(i + 2)] != '\0'){ */
+	/*   size_t fnsize = 0; */
+	/*   for(int j = 0; j < (PROMPT_SIZE - 2); j++){ */
+	/*     if(buf[j + (i + 2)] != '\0') fnsize++; */
+	/*     else break; */
+	/*   } */
+	/*   free(E.filename); */
+	/*   E.filename = malloc(fnsize); */
+	/*   memcpy(E.filename, &buf[(i + 2)], fnsize); */
+	/* } */
         voided_save();
 	return;
       case 'q':
